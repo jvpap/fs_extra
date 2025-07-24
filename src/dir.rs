@@ -1,8 +1,11 @@
 use crate::error::*;
-use std::collections::{HashMap, HashSet};
-use std::fs::{create_dir, create_dir_all, read_dir, remove_dir_all, Metadata};
-use std::path::{Path, PathBuf};
+use std::collections::{ HashMap, HashSet };
+use std::fs::{ create_dir, create_dir_all, read_dir, remove_dir_all, Metadata };
+use std::path::{ Path, PathBuf };
 use std::time::SystemTime;
+
+#[cfg(feature = "filetime")]
+use crate::time::{ TimeOptions, copy_time };
 
 /// Options and flags which can be used to configure how a file will be copied or moved.
 #[derive(Clone)]
@@ -21,6 +24,9 @@ pub struct CopyOptions {
     ///
     /// Warning: Work only for copy operations!
     pub depth: u64,
+    /// File time options.
+    #[cfg(feature = "filetime")]
+    pub time_options: TimeOptions,
 }
 
 impl CopyOptions {
@@ -43,6 +49,8 @@ impl CopyOptions {
             copy_inside: false,
             content_only: false,
             depth: 0,
+            #[cfg(feature = "filetime")]
+            time_options: TimeOptions::new(),
         }
     }
 
@@ -260,10 +268,9 @@ pub struct LsResult {
 /// ```
 pub fn get_details_entry<P>(
     path: P,
-    config: &HashSet<DirEntryAttr>,
+    config: &HashSet<DirEntryAttr>
 ) -> Result<HashMap<DirEntryAttr, DirEntryValue>>
-where
-    P: AsRef<Path>,
+    where P: AsRef<Path>
 {
     let path = path.as_ref();
     let metadata = path.metadata()?;
@@ -273,10 +280,9 @@ where
 fn get_details_entry_with_meta<P>(
     path: P,
     config: &HashSet<DirEntryAttr>,
-    metadata: Metadata,
+    metadata: Metadata
 ) -> Result<HashMap<DirEntryAttr, DirEntryValue>>
-where
-    P: AsRef<Path>,
+    where P: AsRef<Path>
 {
     let path = path.as_ref();
     let mut item = HashMap::new();
@@ -285,7 +291,7 @@ where
             if let Some(file_name) = path.file_name() {
                 item.insert(
                     DirEntryAttr::Name,
-                    DirEntryValue::String(file_name.to_os_string().into_string()?),
+                    DirEntryValue::String(file_name.to_os_string().into_string()?)
                 );
             } else {
                 item.insert(DirEntryAttr::Name, DirEntryValue::String(String::new()));
@@ -293,7 +299,7 @@ where
         } else if let Some(file_stem) = path.file_stem() {
             item.insert(
                 DirEntryAttr::Name,
-                DirEntryValue::String(file_stem.to_os_string().into_string()?),
+                DirEntryValue::String(file_stem.to_os_string().into_string()?)
             );
         } else {
             item.insert(DirEntryAttr::Name, DirEntryValue::String(String::new()));
@@ -303,7 +309,7 @@ where
         if let Some(value) = path.extension() {
             item.insert(
                 DirEntryAttr::Ext,
-                DirEntryValue::String(value.to_os_string().into_string()?),
+                DirEntryValue::String(value.to_os_string().into_string()?)
             );
         } else {
             item.insert(DirEntryAttr::Ext, DirEntryValue::String(String::from("")));
@@ -313,7 +319,7 @@ where
         if let Some(file_name) = path.file_name() {
             item.insert(
                 DirEntryAttr::FullName,
-                DirEntryValue::String(file_name.to_os_string().into_string()?),
+                DirEntryValue::String(file_name.to_os_string().into_string()?)
             );
         } else {
             item.insert(DirEntryAttr::FullName, DirEntryValue::String(String::new()));
@@ -373,34 +379,19 @@ where
         item.insert(DirEntryAttr::FileSize, DirEntryValue::U64(metadata.len()));
     }
     if config.contains(&DirEntryAttr::IsDir) {
-        item.insert(
-            DirEntryAttr::IsDir,
-            DirEntryValue::Boolean(metadata.is_dir()),
-        );
+        item.insert(DirEntryAttr::IsDir, DirEntryValue::Boolean(metadata.is_dir()));
     }
     if config.contains(&DirEntryAttr::IsFile) {
-        item.insert(
-            DirEntryAttr::IsFile,
-            DirEntryValue::Boolean(metadata.is_file()),
-        );
+        item.insert(DirEntryAttr::IsFile, DirEntryValue::Boolean(metadata.is_file()));
     }
     if config.contains(&DirEntryAttr::Modified) {
-        item.insert(
-            DirEntryAttr::Modified,
-            DirEntryValue::SystemTime(metadata.modified()?),
-        );
+        item.insert(DirEntryAttr::Modified, DirEntryValue::SystemTime(metadata.modified()?));
     }
     if config.contains(&DirEntryAttr::Accessed) {
-        item.insert(
-            DirEntryAttr::Accessed,
-            DirEntryValue::SystemTime(metadata.accessed()?),
-        );
+        item.insert(DirEntryAttr::Accessed, DirEntryValue::SystemTime(metadata.accessed()?));
     }
     if config.contains(&DirEntryAttr::Created) {
-        item.insert(
-            DirEntryAttr::Created,
-            DirEntryValue::SystemTime(metadata.created()?),
-        );
+        item.insert(DirEntryAttr::Created, DirEntryValue::SystemTime(metadata.created()?));
     }
     Ok(item)
 }
@@ -438,10 +429,7 @@ where
 /// assert_eq!(2, ls_result.items.len());
 /// assert_eq!(2, ls_result.base.len());
 /// ```
-pub fn ls<P>(path: P, config: &HashSet<DirEntryAttr>) -> Result<LsResult>
-where
-    P: AsRef<Path>,
-{
+pub fn ls<P>(path: P, config: &HashSet<DirEntryAttr>) -> Result<LsResult> where P: AsRef<Path> {
     let mut items = Vec::new();
     let path = path.as_ref();
     if !path.is_dir() {
@@ -486,10 +474,7 @@ where
 ///
 /// create("dir", false); // create directory
 /// ```
-pub fn create<P>(path: P, erase: bool) -> Result<()>
-where
-    P: AsRef<Path>,
-{
+pub fn create<P>(path: P, erase: bool) -> Result<()> where P: AsRef<Path> {
     if erase && path.as_ref().exists() {
         remove(&path)?;
     }
@@ -520,10 +505,7 @@ where
 /// use fs_extra::dir::create_all;
 ///
 /// create_all("/some/dir", false); // create directory some and dir
-pub fn create_all<P>(path: P, erase: bool) -> Result<()>
-where
-    P: AsRef<Path>,
-{
+pub fn create_all<P>(path: P, erase: bool) -> Result<()> where P: AsRef<Path> {
     if erase && path.as_ref().exists() {
         remove(&path)?;
     }
@@ -558,9 +540,7 @@ where
 ///
 /// ```
 pub fn copy<P, Q>(from: P, to: Q, options: &CopyOptions) -> Result<u64>
-where
-    P: AsRef<Path>,
-    Q: AsRef<Path>,
+    where P: AsRef<Path>, Q: AsRef<Path>
 {
     let from = from.as_ref();
 
@@ -569,10 +549,7 @@ where
             let msg = format!("Path \"{}\" does not exist or you don't have access!", msg);
             err!(&msg, ErrorKind::NotFound);
         }
-        err!(
-            "Path does not exist Or you don't have access!",
-            ErrorKind::NotFound
-        );
+        err!("Path does not exist Or you don't have access!", ErrorKind::NotFound);
     }
     if !from.is_dir() {
         if let Some(msg) = from.to_str() {
@@ -598,17 +575,9 @@ where
     }
 
     let dir_content = get_dir_content2(from, &read_options)?;
-    for directory in dir_content.directories {
-        let tmp_to = Path::new(&directory).strip_prefix(from)?;
-        let dir = to.join(&tmp_to);
-        if !dir.exists() {
-            if options.copy_inside {
-                create_all(dir, false)?;
-            } else {
-                create(dir, false)?;
-            }
-        }
-    }
+
+    copy_dir_structure(from, to.as_path(), &dir_content, &options)?;
+
     let mut result: u64 = 0;
     for file in dir_content.files {
         let to = to.to_path_buf();
@@ -619,6 +588,8 @@ where
             overwrite: options.overwrite,
             skip_exist: options.skip_exist,
             buffer_size: options.buffer_size,
+            #[cfg(feature = "filetime")]
+            time_options: options.time_options.clone(),
         };
         let mut result_copy: Result<u64>;
         let mut work = true;
@@ -632,7 +603,7 @@ where
                 }
                 Err(err) => {
                     let err_msg = err.to_string();
-                    err!(err_msg.as_str(), err.kind)
+                    err!(err_msg.as_str(), err.kind);
                 }
             }
         }
@@ -666,10 +637,7 @@ where
 /// }
 /// ```
 ///
-pub fn get_dir_content<P>(path: P) -> Result<DirContent>
-where
-    P: AsRef<Path>,
-{
+pub fn get_dir_content<P>(path: P) -> Result<DirContent> where P: AsRef<Path> {
     let options = DirOptions::new();
     get_dir_content2(path, &options)
 }
@@ -702,10 +670,7 @@ where
 /// }
 /// ```
 ///
-pub fn get_dir_content2<P>(path: P, options: &DirOptions) -> Result<DirContent>
-where
-    P: AsRef<Path>,
-{
+pub fn get_dir_content2<P>(path: P, options: &DirOptions) -> Result<DirContent> where P: AsRef<Path> {
     let mut depth = 0;
     if options.depth != 0 {
         depth = options.depth + 1;
@@ -713,10 +678,7 @@ where
     _get_dir_content(path, depth)
 }
 
-fn _get_dir_content<P>(path: P, mut depth: u64) -> Result<DirContent>
-where
-    P: AsRef<Path>,
-{
+fn _get_dir_content<P>(path: P, mut depth: u64) -> Result<DirContent> where P: AsRef<Path> {
     let mut directories = Vec::new();
     let mut files = Vec::new();
     let mut dir_size;
@@ -744,7 +706,9 @@ where
                         files.append(&mut _files);
                         directories.append(&mut _directories);
                     }
-                    Err(err) => return Err(err),
+                    Err(err) => {
+                        return Err(err);
+                    }
                 }
             }
         }
@@ -783,10 +747,7 @@ where
 /// let folder_size = get_size("dir")?;
 /// println!("{}", folder_size); // print directory size in bytes
 /// ```
-pub fn get_size<P>(path: P) -> Result<u64>
-where
-    P: AsRef<Path>,
-{
+pub fn get_size<P>(path: P) -> Result<u64> where P: AsRef<Path> {
     // Using `fs::symlink_metadata` since we don't want to follow symlinks,
     // as we're calculating the exact size of the requested path itself.
     let path_metadata = path.as_ref().symlink_metadata()?;
@@ -847,12 +808,10 @@ pub fn copy_with_progress<P, Q, F>(
     from: P,
     to: Q,
     options: &CopyOptions,
-    mut progress_handler: F,
-) -> Result<u64>
-where
-    P: AsRef<Path>,
-    Q: AsRef<Path>,
-    F: FnMut(TransitProcess) -> TransitProcessResult,
+    mut progress_handler: F
+)
+    -> Result<u64>
+    where P: AsRef<Path>, Q: AsRef<Path>, F: FnMut(TransitProcess) -> TransitProcessResult
 {
     let from = from.as_ref();
 
@@ -861,10 +820,7 @@ where
             let msg = format!("Path \"{}\" does not exist or you don't have access!", msg);
             err!(&msg, ErrorKind::NotFound);
         }
-        err!(
-            "Path does not exist or you don't have access!",
-            ErrorKind::NotFound
-        );
+        err!("Path does not exist or you don't have access!", ErrorKind::NotFound);
     }
 
     let mut to: PathBuf = to.as_ref().to_path_buf();
@@ -892,17 +848,8 @@ where
     }
 
     let dir_content = get_dir_content2(from, &read_options)?;
-    for directory in dir_content.directories {
-        let tmp_to = Path::new(&directory).strip_prefix(from)?;
-        let dir = to.join(&tmp_to);
-        if !dir.exists() {
-            if options.copy_inside {
-                create_all(dir, false)?;
-            } else {
-                create(dir, false)?;
-            }
-        }
-    }
+
+    copy_dir_structure(from, to.as_path(), &dir_content, &options)?;
 
     let mut result: u64 = 0;
     let mut info_process = TransitProcess {
@@ -931,6 +878,8 @@ where
             overwrite: options.overwrite,
             skip_exist: options.skip_exist,
             buffer_size: options.buffer_size,
+            #[cfg(feature = "filetime")]
+            time_options: options.time_options.clone(),
         };
 
         if let Some(file_name) = file_name.to_str() {
@@ -953,79 +902,84 @@ where
                     progress_handler(info_process.clone());
                 };
 
-                result_copy =
-                    super::file::copy_with_progress(&file, &path, &file_options, _progress_handler);
+                result_copy = super::file::copy_with_progress(
+                    &file,
+                    &path,
+                    &file_options,
+                    _progress_handler
+                );
             }
             match result_copy {
                 Ok(val) => {
                     result += val;
                     work = false;
                 }
-                Err(err) => match err.kind {
-                    ErrorKind::AlreadyExists => {
-                        let mut info_process = info_process.clone();
-                        info_process.state = TransitState::Exists;
-                        let user_decide = progress_handler(info_process);
-                        match user_decide {
-                            TransitProcessResult::Overwrite => {
-                                file_options.overwrite = true;
-                            }
-                            TransitProcessResult::OverwriteAll => {
-                                file_options.overwrite = true;
-                                options.overwrite = true;
-                            }
-                            TransitProcessResult::Skip => {
-                                file_options.skip_exist = true;
-                            }
-                            TransitProcessResult::SkipAll => {
-                                file_options.skip_exist = true;
-                                options.skip_exist = true;
-                            }
-                            TransitProcessResult::Retry => {}
-                            TransitProcessResult::ContinueOrAbort => {
-                                let err_msg = err.to_string();
-                                err!(err_msg.as_str(), err.kind)
-                            }
-                            TransitProcessResult::Abort => {
-                                let err_msg = err.to_string();
-                                err!(err_msg.as_str(), err.kind)
-                            }
-                        }
-                    }
-                    ErrorKind::PermissionDenied => {
-                        let mut info_process = info_process.clone();
-                        info_process.state = TransitState::Exists;
-                        let user_decide = progress_handler(info_process);
-                        match user_decide {
-                            TransitProcessResult::Overwrite => {
-                                err!("Overwrite denied for this situation!", ErrorKind::Other);
-                            }
-                            TransitProcessResult::OverwriteAll => {
-                                err!("Overwrite denied for this situation!", ErrorKind::Other);
-                            }
-                            TransitProcessResult::Skip => {
-                                file_options.skip_exist = true;
-                            }
-                            TransitProcessResult::SkipAll => {
-                                file_options.skip_exist = true;
-                                options.skip_exist = true;
-                            }
-                            TransitProcessResult::Retry => {}
-                            TransitProcessResult::ContinueOrAbort => {
-                                let err_msg = err.to_string();
-                                err!(err_msg.as_str(), err.kind)
-                            }
-                            TransitProcessResult::Abort => {
-                                let err_msg = err.to_string();
-                                err!(err_msg.as_str(), err.kind)
+                Err(err) =>
+                    match err.kind {
+                        ErrorKind::AlreadyExists => {
+                            let mut info_process = info_process.clone();
+                            info_process.state = TransitState::Exists;
+                            let user_decide = progress_handler(info_process);
+                            match user_decide {
+                                TransitProcessResult::Overwrite => {
+                                    file_options.overwrite = true;
+                                }
+                                TransitProcessResult::OverwriteAll => {
+                                    file_options.overwrite = true;
+                                    options.overwrite = true;
+                                }
+                                TransitProcessResult::Skip => {
+                                    file_options.skip_exist = true;
+                                }
+                                TransitProcessResult::SkipAll => {
+                                    file_options.skip_exist = true;
+                                    options.skip_exist = true;
+                                }
+                                TransitProcessResult::Retry => {}
+                                TransitProcessResult::ContinueOrAbort => {
+                                    let err_msg = err.to_string();
+                                    err!(err_msg.as_str(), err.kind);
+                                }
+                                TransitProcessResult::Abort => {
+                                    let err_msg = err.to_string();
+                                    err!(err_msg.as_str(), err.kind);
+                                }
                             }
                         }
+                        ErrorKind::PermissionDenied => {
+                            let mut info_process = info_process.clone();
+                            info_process.state = TransitState::Exists;
+                            let user_decide = progress_handler(info_process);
+                            match user_decide {
+                                TransitProcessResult::Overwrite => {
+                                    err!("Overwrite denied for this situation!", ErrorKind::Other);
+                                }
+                                TransitProcessResult::OverwriteAll => {
+                                    err!("Overwrite denied for this situation!", ErrorKind::Other);
+                                }
+                                TransitProcessResult::Skip => {
+                                    file_options.skip_exist = true;
+                                }
+                                TransitProcessResult::SkipAll => {
+                                    file_options.skip_exist = true;
+                                    options.skip_exist = true;
+                                }
+                                TransitProcessResult::Retry => {}
+                                TransitProcessResult::ContinueOrAbort => {
+                                    let err_msg = err.to_string();
+                                    err!(err_msg.as_str(), err.kind);
+                                }
+                                TransitProcessResult::Abort => {
+                                    let err_msg = err.to_string();
+                                    err!(err_msg.as_str(), err.kind);
+                                }
+                            }
+                        }
+                        _ => {
+                            let err_msg = err.to_string();
+                            err!(err_msg.as_str(), err.kind);
+                        }
                     }
-                    _ => {
-                        let err_msg = err.to_string();
-                        err!(err_msg.as_str(), err.kind)
-                    }
-                },
             }
         }
     }
@@ -1059,9 +1013,7 @@ where
 ///
 /// ```
 pub fn move_dir<P, Q>(from: P, to: Q, options: &CopyOptions) -> Result<u64>
-where
-    P: AsRef<Path>,
-    Q: AsRef<Path>,
+    where P: AsRef<Path>, Q: AsRef<Path>
 {
     let mut is_remove = true;
     if options.skip_exist && to.as_ref().exists() && !options.overwrite {
@@ -1074,25 +1026,16 @@ where
             let msg = format!("Path \"{}\" does not exist", msg);
             err!(&msg, ErrorKind::NotFound);
         }
-        err!(
-            "Path does not exist or you don't have access!",
-            ErrorKind::NotFound
-        );
+        err!("Path does not exist or you don't have access!", ErrorKind::NotFound);
     }
 
     let mut to: PathBuf = to.as_ref().to_path_buf();
     if !from.is_dir() {
         if let Some(msg) = from.to_str() {
-            let msg = format!(
-                "Path \"{}\" is not a directory or you don't have access!",
-                msg
-            );
+            let msg = format!("Path \"{}\" is not a directory or you don't have access!", msg);
             err!(&msg, ErrorKind::InvalidFolder);
         }
-        err!(
-            "Path is not a directory or you don't have access!",
-            ErrorKind::InvalidFolder
-        );
+        err!("Path is not a directory or you don't have access!", ErrorKind::InvalidFolder);
     }
     let dir_name;
     if let Some(val) = from.components().last() {
@@ -1105,17 +1048,9 @@ where
         to.push(dir_name);
     }
     let dir_content = get_dir_content(from)?;
-    for directory in dir_content.directories {
-        let tmp_to = Path::new(&directory).strip_prefix(from)?;
-        let dir = to.join(&tmp_to);
-        if !dir.exists() {
-            if options.copy_inside {
-                create_all(dir, false)?;
-            } else {
-                create(dir, false)?;
-            }
-        }
-    }
+
+    copy_dir_structure(from, to.as_path(), &dir_content, &options)?;
+
     let mut result: u64 = 0;
     for file in dir_content.files {
         let to = to.to_path_buf();
@@ -1126,6 +1061,8 @@ where
             overwrite: options.overwrite,
             skip_exist: options.skip_exist,
             buffer_size: options.buffer_size,
+            #[cfg(feature = "filetime")]
+            time_options: options.time_options.clone(),
         };
 
         let mut result_copy: Result<u64>;
@@ -1140,7 +1077,7 @@ where
                     }
                     Err(err) => {
                         let err_msg = err.to_string();
-                        err!(err_msg.as_str(), err.kind)
+                        err!(err_msg.as_str(), err.kind);
                     }
                 }
             }
@@ -1186,12 +1123,10 @@ pub fn move_dir_with_progress<P, Q, F>(
     from: P,
     to: Q,
     options: &CopyOptions,
-    mut progress_handler: F,
-) -> Result<u64>
-where
-    P: AsRef<Path>,
-    Q: AsRef<Path>,
-    F: FnMut(TransitProcess) -> TransitProcessResult,
+    mut progress_handler: F
+)
+    -> Result<u64>
+    where P: AsRef<Path>, Q: AsRef<Path>, F: FnMut(TransitProcess) -> TransitProcessResult
 {
     let mut is_remove = true;
     if options.skip_exist && to.as_ref().exists() && !options.overwrite {
@@ -1204,10 +1139,7 @@ where
             let msg = format!("Path \"{}\" does not exist or you don't have access!", msg);
             err!(&msg, ErrorKind::NotFound);
         }
-        err!(
-            "Path does not exist or you don't have access!",
-            ErrorKind::NotFound
-        );
+        err!("Path does not exist or you don't have access!", ErrorKind::NotFound);
     }
 
     let mut to: PathBuf = to.as_ref().to_path_buf();
@@ -1224,22 +1156,13 @@ where
     } else {
         err!("Invalid folder from", ErrorKind::InvalidFolder);
     }
-    if !(options.content_only || options.copy_inside && !to.exists()) {
+    if !(options.content_only || (options.copy_inside && !to.exists())) {
         to.push(dir_name);
     }
 
     let dir_content = get_dir_content(from)?;
-    for directory in dir_content.directories {
-        let tmp_to = Path::new(&directory).strip_prefix(from)?;
-        let dir = to.join(&tmp_to);
-        if !dir.exists() {
-            if options.copy_inside {
-                create_all(dir, false)?;
-            } else {
-                create(dir, false)?;
-            }
-        }
-    }
+
+    copy_dir_structure(from, to.as_path(), &dir_content, &options)?;
 
     let mut result: u64 = 0;
     let mut info_process = TransitProcess {
@@ -1268,6 +1191,8 @@ where
             overwrite: options.overwrite,
             skip_exist: options.skip_exist,
             buffer_size: options.buffer_size,
+            #[cfg(feature = "filetime")]
+            time_options: options.time_options.clone(),
         };
 
         if let Some(file_name) = file_name.to_str() {
@@ -1294,7 +1219,7 @@ where
                     &file,
                     &path,
                     &file_options,
-                    _progress_handler,
+                    _progress_handler
                 );
             }
             match result_copy {
@@ -1302,74 +1227,75 @@ where
                     result += val;
                     work = false;
                 }
-                Err(err) => match err.kind {
-                    ErrorKind::AlreadyExists => {
-                        let mut info_process = info_process.clone();
-                        info_process.state = TransitState::Exists;
-                        let user_decide = progress_handler(info_process);
-                        match user_decide {
-                            TransitProcessResult::Overwrite => {
-                                file_options.overwrite = true;
-                            }
-                            TransitProcessResult::OverwriteAll => {
-                                file_options.overwrite = true;
-                                options.overwrite = true;
-                            }
-                            TransitProcessResult::Skip => {
-                                is_remove = false;
-                                file_options.skip_exist = true;
-                            }
-                            TransitProcessResult::SkipAll => {
-                                is_remove = false;
-                                file_options.skip_exist = true;
-                                options.skip_exist = true;
-                            }
-                            TransitProcessResult::Retry => {}
-                            TransitProcessResult::ContinueOrAbort => {
-                                let err_msg = err.to_string();
-                                err!(err_msg.as_str(), err.kind)
-                            }
-                            TransitProcessResult::Abort => {
-                                let err_msg = err.to_string();
-                                err!(err_msg.as_str(), err.kind)
-                            }
-                        }
-                    }
-                    ErrorKind::PermissionDenied => {
-                        let mut info_process = info_process.clone();
-                        info_process.state = TransitState::Exists;
-                        let user_decide = progress_handler(info_process);
-                        match user_decide {
-                            TransitProcessResult::Overwrite => {
-                                err!("Overwrite denied for this situation!", ErrorKind::Other);
-                            }
-                            TransitProcessResult::OverwriteAll => {
-                                err!("Overwrite denied for this situation!", ErrorKind::Other);
-                            }
-                            TransitProcessResult::Skip => {
-                                is_remove = false;
-                                file_options.skip_exist = true;
-                            }
-                            TransitProcessResult::SkipAll => {
-                                file_options.skip_exist = true;
-                                options.skip_exist = true;
-                            }
-                            TransitProcessResult::Retry => {}
-                            TransitProcessResult::ContinueOrAbort => {
-                                let err_msg = err.to_string();
-                                err!(err_msg.as_str(), err.kind)
-                            }
-                            TransitProcessResult::Abort => {
-                                let err_msg = err.to_string();
-                                err!(err_msg.as_str(), err.kind)
+                Err(err) =>
+                    match err.kind {
+                        ErrorKind::AlreadyExists => {
+                            let mut info_process = info_process.clone();
+                            info_process.state = TransitState::Exists;
+                            let user_decide = progress_handler(info_process);
+                            match user_decide {
+                                TransitProcessResult::Overwrite => {
+                                    file_options.overwrite = true;
+                                }
+                                TransitProcessResult::OverwriteAll => {
+                                    file_options.overwrite = true;
+                                    options.overwrite = true;
+                                }
+                                TransitProcessResult::Skip => {
+                                    is_remove = false;
+                                    file_options.skip_exist = true;
+                                }
+                                TransitProcessResult::SkipAll => {
+                                    is_remove = false;
+                                    file_options.skip_exist = true;
+                                    options.skip_exist = true;
+                                }
+                                TransitProcessResult::Retry => {}
+                                TransitProcessResult::ContinueOrAbort => {
+                                    let err_msg = err.to_string();
+                                    err!(err_msg.as_str(), err.kind);
+                                }
+                                TransitProcessResult::Abort => {
+                                    let err_msg = err.to_string();
+                                    err!(err_msg.as_str(), err.kind);
+                                }
                             }
                         }
+                        ErrorKind::PermissionDenied => {
+                            let mut info_process = info_process.clone();
+                            info_process.state = TransitState::Exists;
+                            let user_decide = progress_handler(info_process);
+                            match user_decide {
+                                TransitProcessResult::Overwrite => {
+                                    err!("Overwrite denied for this situation!", ErrorKind::Other);
+                                }
+                                TransitProcessResult::OverwriteAll => {
+                                    err!("Overwrite denied for this situation!", ErrorKind::Other);
+                                }
+                                TransitProcessResult::Skip => {
+                                    is_remove = false;
+                                    file_options.skip_exist = true;
+                                }
+                                TransitProcessResult::SkipAll => {
+                                    file_options.skip_exist = true;
+                                    options.skip_exist = true;
+                                }
+                                TransitProcessResult::Retry => {}
+                                TransitProcessResult::ContinueOrAbort => {
+                                    let err_msg = err.to_string();
+                                    err!(err_msg.as_str(), err.kind);
+                                }
+                                TransitProcessResult::Abort => {
+                                    let err_msg = err.to_string();
+                                    err!(err_msg.as_str(), err.kind);
+                                }
+                            }
+                        }
+                        _ => {
+                            let err_msg = err.to_string();
+                            err!(err_msg.as_str(), err.kind);
+                        }
                     }
-                    _ => {
-                        let err_msg = err.to_string();
-                        err!(err_msg.as_str(), err.kind)
-                    }
-                },
             }
         }
     }
@@ -1390,9 +1316,28 @@ where
 /// remove("source/dir1"); // remove dir1
 /// ```
 pub fn remove<P: AsRef<Path>>(path: P) -> Result<()> {
-    if path.as_ref().exists() {
-        Ok(remove_dir_all(path)?)
-    } else {
-        Ok(())
+    if path.as_ref().exists() { Ok(remove_dir_all(path)?) } else { Ok(()) }
+}
+
+fn copy_dir_structure(
+    from: &Path,
+    to: &Path,
+    dir_content: &DirContent,
+    options: &CopyOptions
+) -> Result<()> {
+    for directory in &dir_content.directories {
+        let path_from = Path::new(directory);
+        let tmp_to = path_from.strip_prefix(from)?;
+        let dir = to.join(&tmp_to);
+        if !dir.exists() {
+            if options.copy_inside {
+                create_all(dir.as_path(), false)?;
+            } else {
+                create(dir.as_path(), false)?;
+            }
+            #[cfg(feature = "filetime")]
+            copy_time(&path_from, dir, &options.time_options)?;
+        }
     }
+    Ok(())
 }

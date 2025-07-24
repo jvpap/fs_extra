@@ -1,8 +1,11 @@
-use crate::error::{Error, ErrorKind, Result};
+use crate::error::{ Error, ErrorKind, Result };
 use std;
-use std::fs::{remove_file, File};
-use std::io::{Read, Write};
+use std::fs::{ remove_file, File };
+use std::io::{ Read, Write };
 use std::path::Path;
+
+#[cfg(feature = "filetime")]
+use crate::time::{ TimeOptions, copy_time };
 
 // Options and flags which can be used to configure how a file will be  copied  or moved.
 pub struct CopyOptions {
@@ -12,6 +15,9 @@ pub struct CopyOptions {
     pub skip_exist: bool,
     /// Sets buffer size for copy/move work only with receipt information about process work.
     pub buffer_size: usize,
+    /// File time options.
+    #[cfg(feature = "filetime")]
+    pub time_options: TimeOptions,
 }
 
 impl CopyOptions {
@@ -30,6 +36,8 @@ impl CopyOptions {
             overwrite: false,
             skip_exist: false,
             buffer_size: 64000, //64kb
+            #[cfg(feature = "filetime")]
+            time_options: TimeOptions::new(),
         }
     }
 
@@ -89,9 +97,7 @@ pub struct TransitProcess {
 ///
 /// ```
 pub fn copy<P, Q>(from: P, to: Q, options: &CopyOptions) -> Result<u64>
-where
-    P: AsRef<Path>,
-    Q: AsRef<Path>,
+    where P: AsRef<Path>, Q: AsRef<Path>
 {
     let from = from.as_ref();
     if !from.exists() {
@@ -99,10 +105,7 @@ where
             let msg = format!("Path \"{}\" does not exist or you don't have access!", msg);
             err!(&msg, ErrorKind::NotFound);
         }
-        err!(
-            "Path does not exist or you don't have access!",
-            ErrorKind::NotFound
-        );
+        err!("Path does not exist or you don't have access!", ErrorKind::NotFound);
     }
 
     if !from.is_file() {
@@ -124,7 +127,11 @@ where
         }
     }
 
-    Ok(std::fs::copy(from, to)?)
+    let result = std::fs::copy(from, to.as_ref())?;
+    #[cfg(feature = "filetime")]
+    copy_time(from, to, &options.time_options)?;
+
+    Ok(result)
 }
 
 /// Copies the contents of one file to another file with information about progress.
@@ -156,12 +163,10 @@ pub fn copy_with_progress<P, Q, F>(
     from: P,
     to: Q,
     options: &CopyOptions,
-    mut progress_handler: F,
-) -> Result<u64>
-where
-    P: AsRef<Path>,
-    Q: AsRef<Path>,
-    F: FnMut(TransitProcess),
+    mut progress_handler: F
+)
+    -> Result<u64>
+    where P: AsRef<Path>, Q: AsRef<Path>, F: FnMut(TransitProcess)
 {
     let from = from.as_ref();
     if !from.exists() {
@@ -169,10 +174,7 @@ where
             let msg = format!("Path \"{}\" does not exist or you don't have access!", msg);
             err!(&msg, ErrorKind::NotFound);
         }
-        err!(
-            "Path does not exist or you don't have access!",
-            ErrorKind::NotFound
-        );
+        err!("Path does not exist or you don't have access!", ErrorKind::NotFound);
     }
 
     if !from.is_file() {
@@ -198,10 +200,12 @@ where
     let file_size = file_from.metadata()?.len();
     let mut copied_bytes: u64 = 0;
 
-    let mut file_to = File::create(to)?;
+    let mut file_to = File::create(to.as_ref())?;
     while !buf.is_empty() {
         match file_from.read(&mut buf) {
-            Ok(0) => break,
+            Ok(0) => {
+                break;
+            }
             Ok(n) => {
                 let written_bytes = file_to.write(&buf[..n])?;
                 if written_bytes != n {
@@ -215,9 +219,13 @@ where
                 progress_handler(data);
             }
             Err(ref e) if e.kind() == ::std::io::ErrorKind::Interrupted => {}
-            Err(e) => return Err(::std::convert::From::from(e)),
+            Err(e) => {
+                return Err(::std::convert::From::from(e));
+            }
         }
     }
+    #[cfg(feature = "filetime")]
+    copy_time(from, to, &options.time_options)?;
     Ok(file_size)
 }
 
@@ -243,9 +251,7 @@ where
 ///
 /// ```
 pub fn move_file<P, Q>(from: P, to: Q, options: &CopyOptions) -> Result<u64>
-where
-    P: AsRef<Path>,
-    Q: AsRef<Path>,
+    where P: AsRef<Path>, Q: AsRef<Path>
 {
     let mut is_remove = true;
     if options.skip_exist && to.as_ref().exists() && !options.overwrite {
@@ -288,12 +294,10 @@ pub fn move_file_with_progress<P, Q, F>(
     from: P,
     to: Q,
     options: &CopyOptions,
-    progress_handler: F,
-) -> Result<u64>
-where
-    P: AsRef<Path>,
-    Q: AsRef<Path>,
-    F: FnMut(TransitProcess),
+    progress_handler: F
+)
+    -> Result<u64>
+    where P: AsRef<Path>, Q: AsRef<Path>, F: FnMut(TransitProcess)
 {
     let mut is_remove = true;
     if options.skip_exist && to.as_ref().exists() && !options.overwrite {
@@ -324,15 +328,8 @@ where
 /// remove("foo.txt" )?; // Remove foo.txt
 ///
 /// ```
-pub fn remove<P>(path: P) -> Result<()>
-where
-    P: AsRef<Path>,
-{
-    if path.as_ref().exists() {
-        Ok(remove_file(path)?)
-    } else {
-        Ok(())
-    }
+pub fn remove<P>(path: P) -> Result<()> where P: AsRef<Path> {
+    if path.as_ref().exists() { Ok(remove_file(path)?) } else { Ok(()) }
 }
 
 /// Read file contents, placing them into `String`.
@@ -355,10 +352,7 @@ where
 /// println!("{}", file_content);
 ///
 /// ```
-pub fn read_to_string<P>(path: P) -> Result<String>
-where
-    P: AsRef<Path>,
-{
+pub fn read_to_string<P>(path: P) -> Result<String> where P: AsRef<Path> {
     let path = path.as_ref();
     if path.exists() && !path.is_file() {
         if let Some(msg) = path.to_str() {
@@ -394,10 +388,7 @@ where
 /// write_all("foo.txt", "contents" )?; // Create file foo.txt and send content inside
 ///
 /// ```
-pub fn write_all<P>(path: P, content: &str) -> Result<()>
-where
-    P: AsRef<Path>,
-{
+pub fn write_all<P>(path: P, content: &str) -> Result<()> where P: AsRef<Path> {
     let path = path.as_ref();
     if path.exists() && !path.is_file() {
         if let Some(msg) = path.to_str() {

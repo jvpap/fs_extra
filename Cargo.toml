@@ -9,12 +9,17 @@ keywords = ["filesystem", "recursion", "copy", "dir", "file"]
 homepage = "https://github.com/webdesus/fs_extra"
 documentation = "https://docs.rs/fs_extra"
 repository = "https://github.com/webdesus/fs_extra"
-include = [
-    "**/*.rs",
-    "Cargo.toml",
-    "LICENSE",
-    "README.md",
-    "CHANGELOG.md",
-]
+include = ["**/*.rs", "Cargo.toml", "LICENSE", "README.md", "CHANGELOG.md"]
 
 [dependencies]
+filetime = { version = "0.2", optional = true }
+
+[package.metadata.scripts]
+audit = "cargo audit"
+build = "cargo build"
+check = "cargo check"
+machete = "cargo machete"
+release = "cargo build --release"
+run = "cargo run"
+sort = "cargo sort"
+watch = "cargo watch -i target -x run"
