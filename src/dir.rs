@@ -1,10 +1,10 @@
+use filetime::{ FileTime, set_file_mtime, set_file_atime };
+
 use crate::error::*;
 use std::collections::{ HashMap, HashSet };
-use std::fs::{ create_dir, create_dir_all, read_dir, remove_dir_all, Metadata };
+use std::fs::{ create_dir, create_dir_all, read_dir, remove_dir_all, Metadata, metadata };
 use std::path::{ Path, PathBuf };
 use std::time::SystemTime;
-
-#[cfg(feature = "filetime")]
 use crate::time::{ TimeOptions, copy_time };
 
 /// Options and flags which can be used to configure how a file will be copied or moved.
@@ -25,7 +25,6 @@ pub struct CopyOptions {
     /// Warning: Work only for copy operations!
     pub depth: u64,
     /// File time options.
-    #[cfg(feature = "filetime")]
     pub time_options: TimeOptions,
 }
 
@@ -49,7 +48,6 @@ impl CopyOptions {
             copy_inside: false,
             content_only: false,
             depth: 0,
-            #[cfg(feature = "filetime")]
             time_options: TimeOptions::new(),
         }
     }
@@ -111,14 +109,25 @@ impl DirOptions {
     }
 }
 
+// Directory with times
+#[derive(Clone)]
+pub struct Dir {
+    /// Directory path.
+    pub path: String,
+    /// Directory size in bytes.
+    pub mtime: FileTime,
+    /// Directory size in bytes.
+    pub atime: FileTime,
+}
 /// A structure which include information about directory
+#[derive(Clone)]
 pub struct DirContent {
     /// Directory size in bytes.
     pub dir_size: u64,
     /// List all files directory and sub directories.
     pub files: Vec<String>,
     /// List all folders and sub folders directory.
-    pub directories: Vec<String>,
+    pub directories: Vec<Dir>,
 }
 
 /// A structure which include information about the current status of the copy or move directory.
@@ -588,7 +597,6 @@ pub fn copy<P, Q>(from: P, to: Q, options: &CopyOptions) -> Result<u64>
             overwrite: options.overwrite,
             skip_exist: options.skip_exist,
             buffer_size: options.buffer_size,
-            #[cfg(feature = "filetime")]
             time_options: options.time_options.clone(),
         };
         let mut result_copy: Result<u64>;
@@ -679,7 +687,7 @@ pub fn get_dir_content2<P>(path: P, options: &DirOptions) -> Result<DirContent> 
 }
 
 fn _get_dir_content<P>(path: P, mut depth: u64) -> Result<DirContent> where P: AsRef<Path> {
-    let mut directories = Vec::new();
+    let mut directories: Vec<Dir> = Vec::new();
     let mut files = Vec::new();
     let mut dir_size;
     let item = path.as_ref().to_str();
@@ -690,7 +698,13 @@ fn _get_dir_content<P>(path: P, mut depth: u64) -> Result<DirContent> where P: A
 
     if path.as_ref().is_dir() {
         dir_size = path.as_ref().metadata()?.len();
-        directories.push(item);
+        let md = metadata(&path)?;
+        let dir = Dir {
+            path: item,
+            mtime: FileTime::from_last_modification_time(&md),
+            atime: FileTime::from_last_access_time(&md),
+        };
+        directories.push(dir);
         if depth == 0 || depth > 1 {
             if depth > 1 {
                 depth -= 1;
@@ -701,7 +715,14 @@ fn _get_dir_content<P>(path: P, mut depth: u64) -> Result<DirContent> where P: A
                 match _get_dir_content(_path, depth) {
                     Ok(items) => {
                         let mut _files = items.files;
-                        let mut _directories = items.directories;
+                        let mut _directories: Vec<Dir> = items.directories
+                            .iter()
+                            .map(|dir| Dir {
+                                path: dir.path.clone(),
+                                mtime: dir.mtime,
+                                atime: dir.atime,
+                            })
+                            .collect();
                         dir_size += items.dir_size;
                         files.append(&mut _files);
                         directories.append(&mut _directories);
@@ -848,6 +869,7 @@ pub fn copy_with_progress<P, Q, F>(
     }
 
     let dir_content = get_dir_content2(from, &read_options)?;
+    let dir_content_after = dir_content.clone();
 
     copy_dir_structure(from, to.as_path(), &dir_content, &options)?;
 
@@ -878,7 +900,6 @@ pub fn copy_with_progress<P, Q, F>(
             overwrite: options.overwrite,
             skip_exist: options.skip_exist,
             buffer_size: options.buffer_size,
-            #[cfg(feature = "filetime")]
             time_options: options.time_options.clone(),
         };
 
@@ -984,6 +1005,8 @@ pub fn copy_with_progress<P, Q, F>(
         }
     }
 
+    // after all files are copied, timestamps has to be set again
+    set_dir_structure_time(from, to.as_path(), &dir_content_after, &options)?;
     Ok(result)
 }
 
@@ -1061,7 +1084,6 @@ pub fn move_dir<P, Q>(from: P, to: Q, options: &CopyOptions) -> Result<u64>
             overwrite: options.overwrite,
             skip_exist: options.skip_exist,
             buffer_size: options.buffer_size,
-            #[cfg(feature = "filetime")]
             time_options: options.time_options.clone(),
         };
 
@@ -1161,6 +1183,7 @@ pub fn move_dir_with_progress<P, Q, F>(
     }
 
     let dir_content = get_dir_content(from)?;
+    let dir_content_after = dir_content.clone();
 
     copy_dir_structure(from, to.as_path(), &dir_content, &options)?;
 
@@ -1191,7 +1214,6 @@ pub fn move_dir_with_progress<P, Q, F>(
             overwrite: options.overwrite,
             skip_exist: options.skip_exist,
             buffer_size: options.buffer_size,
-            #[cfg(feature = "filetime")]
             time_options: options.time_options.clone(),
         };
 
@@ -1299,6 +1321,8 @@ pub fn move_dir_with_progress<P, Q, F>(
             }
         }
     }
+    // after all files are copied, timestamps has to be set again
+    set_dir_structure_time(from, to.as_path(), &dir_content_after, &options)?;
     if is_remove {
         remove(from)?;
     }
@@ -1326,7 +1350,7 @@ fn copy_dir_structure(
     options: &CopyOptions
 ) -> Result<()> {
     for directory in &dir_content.directories {
-        let path_from = Path::new(directory);
+        let path_from = Path::new(&directory.path);
         let tmp_to = path_from.strip_prefix(from)?;
         let dir = to.join(&tmp_to);
         if !dir.exists() {
@@ -1335,8 +1359,26 @@ fn copy_dir_structure(
             } else {
                 create(dir.as_path(), false)?;
             }
-            #[cfg(feature = "filetime")]
             copy_time(&path_from, dir, &options.time_options)?;
+        }
+    }
+    Ok(())
+}
+fn set_dir_structure_time(
+    from: &Path,
+    to: &Path,
+    dir_content: &DirContent,
+    options: &CopyOptions
+) -> Result<()> {
+    for directory in &dir_content.directories {
+        let path_from = Path::new(&directory.path);
+        let tmp_to = path_from.strip_prefix(from)?;
+        let dir = to.join(&tmp_to);
+        if options.time_options.retain_modification_time {
+            set_file_mtime(dir.as_path(), directory.mtime)?;
+        }
+        if options.time_options.retain_access_time {
+            set_file_atime(dir.as_path(), directory.atime)?;
         }
     }
     Ok(())

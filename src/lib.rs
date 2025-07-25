@@ -13,7 +13,6 @@ pub mod error;
 
 /// This module includes an additional method for working with file and
 /// directory modification times and access times.
-#[cfg(feature = "filetime")]
 pub mod time;
 
 /// This module includes additional methods for working with files.
@@ -194,16 +193,11 @@ use std::path::Path;
 /// ```
 ///
 pub fn copy_items<P, Q>(from: &[P], to: Q, options: &dir::CopyOptions) -> Result<u64>
-where
-    P: AsRef<Path>,
-    Q: AsRef<Path>,
+    where P: AsRef<Path>, Q: AsRef<Path>
 {
     let mut result: u64 = 0;
     if options.content_only {
-        err!(
-            "Options 'content_only' not acccess for copy_items function",
-            ErrorKind::Other
-        );
+        err!("Options 'content_only' not acccess for copy_items function", ErrorKind::Other);
     }
     for item in from {
         let item = item.as_ref();
@@ -296,12 +290,10 @@ pub fn copy_items_with_progress<P, Q, F>(
     from: &[P],
     to: Q,
     options: &dir::CopyOptions,
-    mut progress_handler: F,
-) -> Result<u64>
-where
-    P: AsRef<Path>,
-    Q: AsRef<Path>,
-    F: FnMut(TransitProcess) -> dir::TransitProcessResult,
+    mut progress_handler: F
+)
+    -> Result<u64>
+    where P: AsRef<Path>, Q: AsRef<Path>, F: FnMut(TransitProcess) -> dir::TransitProcessResult
 {
     if options.content_only {
         err!(
@@ -348,8 +340,12 @@ where
                 info_process.state = info.state;
                 let result = progress_handler(info_process.clone());
                 match result {
-                    dir::TransitProcessResult::OverwriteAll => options.overwrite = true,
-                    dir::TransitProcessResult::SkipAll => options.skip_exist = true,
+                    dir::TransitProcessResult::OverwriteAll => {
+                        options.overwrite = true;
+                    }
+                    dir::TransitProcessResult::SkipAll => {
+                        options.skip_exist = true;
+                    }
                     _ => {}
                 }
                 result
@@ -360,7 +356,6 @@ where
                 overwrite: options.overwrite,
                 skip_exist: options.skip_exist,
                 buffer_size: options.buffer_size,
-                #[cfg(feature = "filetime")]
                 time_options: options.time_options.clone(),
             };
 
@@ -389,79 +384,90 @@ where
                         info_process.file_bytes_copied = info.copied_bytes;
                         progress_handler(info_process.clone());
                     };
-                    result_copy =
-                        file::copy_with_progress(item, &file_name, &file_options, handler);
+                    result_copy = file::copy_with_progress(
+                        item,
+                        &file_name,
+                        &file_options,
+                        handler
+                    );
                 }
                 match result_copy {
                     Ok(val) => {
                         result += val;
                         work = false;
                     }
-                    Err(err) => match err.kind {
-                        ErrorKind::AlreadyExists => {
-                            let mut info_process = info_process.clone();
-                            info_process.state = dir::TransitState::Exists;
-                            let user_decide = progress_handler(info_process);
-                            match user_decide {
-                                dir::TransitProcessResult::Overwrite => {
-                                    file_options.overwrite = true;
-                                }
-                                dir::TransitProcessResult::OverwriteAll => {
-                                    file_options.overwrite = true;
-                                    options.overwrite = true;
-                                }
-                                dir::TransitProcessResult::Skip => {
-                                    file_options.skip_exist = true;
-                                }
-                                dir::TransitProcessResult::SkipAll => {
-                                    file_options.skip_exist = true;
-                                    options.skip_exist = true;
-                                }
-                                dir::TransitProcessResult::Retry => {}
-                                dir::TransitProcessResult::ContinueOrAbort => {
-                                    let err_msg = err.to_string();
-                                    err!(err_msg.as_str(), err.kind)
-                                }
-                                dir::TransitProcessResult::Abort => {
-                                    let err_msg = err.to_string();
-                                    err!(err_msg.as_str(), err.kind)
-                                }
-                            }
-                        }
-                        ErrorKind::PermissionDenied => {
-                            let mut info_process = info_process.clone();
-                            info_process.state = dir::TransitState::Exists;
-                            let user_decide = progress_handler(info_process);
-                            match user_decide {
-                                dir::TransitProcessResult::Overwrite => {
-                                    err!("Overwrite denied for this situation!", ErrorKind::Other);
-                                }
-                                dir::TransitProcessResult::OverwriteAll => {
-                                    err!("Overwrite denied for this situation!", ErrorKind::Other);
-                                }
-                                dir::TransitProcessResult::Skip => {
-                                    file_options.skip_exist = true;
-                                }
-                                dir::TransitProcessResult::SkipAll => {
-                                    file_options.skip_exist = true;
-                                    options.skip_exist = true;
-                                }
-                                dir::TransitProcessResult::Retry => {}
-                                dir::TransitProcessResult::ContinueOrAbort => {
-                                    let err_msg = err.to_string();
-                                    err!(err_msg.as_str(), err.kind)
-                                }
-                                dir::TransitProcessResult::Abort => {
-                                    let err_msg = err.to_string();
-                                    err!(err_msg.as_str(), err.kind)
+                    Err(err) =>
+                        match err.kind {
+                            ErrorKind::AlreadyExists => {
+                                let mut info_process = info_process.clone();
+                                info_process.state = dir::TransitState::Exists;
+                                let user_decide = progress_handler(info_process);
+                                match user_decide {
+                                    dir::TransitProcessResult::Overwrite => {
+                                        file_options.overwrite = true;
+                                    }
+                                    dir::TransitProcessResult::OverwriteAll => {
+                                        file_options.overwrite = true;
+                                        options.overwrite = true;
+                                    }
+                                    dir::TransitProcessResult::Skip => {
+                                        file_options.skip_exist = true;
+                                    }
+                                    dir::TransitProcessResult::SkipAll => {
+                                        file_options.skip_exist = true;
+                                        options.skip_exist = true;
+                                    }
+                                    dir::TransitProcessResult::Retry => {}
+                                    dir::TransitProcessResult::ContinueOrAbort => {
+                                        let err_msg = err.to_string();
+                                        err!(err_msg.as_str(), err.kind);
+                                    }
+                                    dir::TransitProcessResult::Abort => {
+                                        let err_msg = err.to_string();
+                                        err!(err_msg.as_str(), err.kind);
+                                    }
                                 }
                             }
+                            ErrorKind::PermissionDenied => {
+                                let mut info_process = info_process.clone();
+                                info_process.state = dir::TransitState::Exists;
+                                let user_decide = progress_handler(info_process);
+                                match user_decide {
+                                    dir::TransitProcessResult::Overwrite => {
+                                        err!(
+                                            "Overwrite denied for this situation!",
+                                            ErrorKind::Other
+                                        );
+                                    }
+                                    dir::TransitProcessResult::OverwriteAll => {
+                                        err!(
+                                            "Overwrite denied for this situation!",
+                                            ErrorKind::Other
+                                        );
+                                    }
+                                    dir::TransitProcessResult::Skip => {
+                                        file_options.skip_exist = true;
+                                    }
+                                    dir::TransitProcessResult::SkipAll => {
+                                        file_options.skip_exist = true;
+                                        options.skip_exist = true;
+                                    }
+                                    dir::TransitProcessResult::Retry => {}
+                                    dir::TransitProcessResult::ContinueOrAbort => {
+                                        let err_msg = err.to_string();
+                                        err!(err_msg.as_str(), err.kind);
+                                    }
+                                    dir::TransitProcessResult::Abort => {
+                                        let err_msg = err.to_string();
+                                        err!(err_msg.as_str(), err.kind);
+                                    }
+                                }
+                            }
+                            _ => {
+                                let err_msg = err.to_string();
+                                err!(err_msg.as_str(), err.kind);
+                            }
                         }
-                        _ => {
-                            let err_msg = err.to_string();
-                            err!(err_msg.as_str(), err.kind)
-                        }
-                    },
                 }
             }
         }
@@ -502,15 +508,10 @@ where
 /// ```
 ///
 pub fn move_items<P, Q>(from_items: &[P], to: Q, options: &dir::CopyOptions) -> Result<u64>
-where
-    P: AsRef<Path>,
-    Q: AsRef<Path>,
+    where P: AsRef<Path>, Q: AsRef<Path>
 {
     if options.content_only {
-        err!(
-            "Options 'content_only' not access for move_items function",
-            ErrorKind::Other
-        );
+        err!("Options 'content_only' not access for move_items function", ErrorKind::Other);
     }
     let mut total_size = 0;
     let mut list_paths = Vec::new();
@@ -549,7 +550,6 @@ where
                 overwrite: options.overwrite,
                 skip_exist: options.skip_exist,
                 buffer_size: options.buffer_size,
-                #[cfg(feature = "filetime")]
                 time_options: options.time_options.clone(),
             };
 
@@ -612,12 +612,10 @@ pub fn move_items_with_progress<P, Q, F>(
     from_items: &[P],
     to: Q,
     options: &dir::CopyOptions,
-    mut progress_handler: F,
-) -> Result<u64>
-where
-    P: AsRef<Path>,
-    Q: AsRef<Path>,
-    F: FnMut(TransitProcess) -> dir::TransitProcessResult,
+    mut progress_handler: F
+)
+    -> Result<u64>
+    where P: AsRef<Path>, Q: AsRef<Path>, F: FnMut(TransitProcess) -> dir::TransitProcessResult
 {
     if options.content_only {
         err!(
@@ -664,8 +662,12 @@ where
                 info_process.state = info.state;
                 let result = progress_handler(info_process.clone());
                 match result {
-                    dir::TransitProcessResult::OverwriteAll => options.overwrite = true,
-                    dir::TransitProcessResult::SkipAll => options.skip_exist = true,
+                    dir::TransitProcessResult::OverwriteAll => {
+                        options.overwrite = true;
+                    }
+                    dir::TransitProcessResult::SkipAll => {
+                        options.skip_exist = true;
+                    }
                     _ => {}
                 }
                 result
@@ -676,7 +678,6 @@ where
                 overwrite: options.overwrite,
                 skip_exist: options.skip_exist,
                 buffer_size: options.buffer_size,
-                #[cfg(feature = "filetime")]
                 time_options: options.time_options.clone(),
             };
 
@@ -705,79 +706,90 @@ where
                         info_process.file_bytes_copied = info.copied_bytes;
                         progress_handler(info_process.clone());
                     };
-                    result_copy =
-                        file::move_file_with_progress(item, &file_name, &file_options, handler);
+                    result_copy = file::move_file_with_progress(
+                        item,
+                        &file_name,
+                        &file_options,
+                        handler
+                    );
                 }
                 match result_copy {
                     Ok(val) => {
                         result += val;
                         work = false;
                     }
-                    Err(err) => match err.kind {
-                        ErrorKind::AlreadyExists => {
-                            let mut info_process = info_process.clone();
-                            info_process.state = dir::TransitState::Exists;
-                            let user_decide = progress_handler(info_process);
-                            match user_decide {
-                                dir::TransitProcessResult::Overwrite => {
-                                    file_options.overwrite = true;
-                                }
-                                dir::TransitProcessResult::OverwriteAll => {
-                                    file_options.overwrite = true;
-                                    options.overwrite = true;
-                                }
-                                dir::TransitProcessResult::Skip => {
-                                    file_options.skip_exist = true;
-                                }
-                                dir::TransitProcessResult::SkipAll => {
-                                    file_options.skip_exist = true;
-                                    options.skip_exist = true;
-                                }
-                                dir::TransitProcessResult::Retry => {}
-                                dir::TransitProcessResult::ContinueOrAbort => {
-                                    let err_msg = err.to_string();
-                                    err!(err_msg.as_str(), err.kind)
-                                }
-                                dir::TransitProcessResult::Abort => {
-                                    let err_msg = err.to_string();
-                                    err!(err_msg.as_str(), err.kind)
-                                }
-                            }
-                        }
-                        ErrorKind::PermissionDenied => {
-                            let mut info_process = info_process.clone();
-                            info_process.state = dir::TransitState::Exists;
-                            let user_decide = progress_handler(info_process);
-                            match user_decide {
-                                dir::TransitProcessResult::Overwrite => {
-                                    err!("Overwrite denied for this situation!", ErrorKind::Other);
-                                }
-                                dir::TransitProcessResult::OverwriteAll => {
-                                    err!("Overwrite denied for this situation!", ErrorKind::Other);
-                                }
-                                dir::TransitProcessResult::Skip => {
-                                    file_options.skip_exist = true;
-                                }
-                                dir::TransitProcessResult::SkipAll => {
-                                    file_options.skip_exist = true;
-                                    options.skip_exist = true;
-                                }
-                                dir::TransitProcessResult::Retry => {}
-                                dir::TransitProcessResult::ContinueOrAbort => {
-                                    let err_msg = err.to_string();
-                                    err!(err_msg.as_str(), err.kind)
-                                }
-                                dir::TransitProcessResult::Abort => {
-                                    let err_msg = err.to_string();
-                                    err!(err_msg.as_str(), err.kind)
+                    Err(err) =>
+                        match err.kind {
+                            ErrorKind::AlreadyExists => {
+                                let mut info_process = info_process.clone();
+                                info_process.state = dir::TransitState::Exists;
+                                let user_decide = progress_handler(info_process);
+                                match user_decide {
+                                    dir::TransitProcessResult::Overwrite => {
+                                        file_options.overwrite = true;
+                                    }
+                                    dir::TransitProcessResult::OverwriteAll => {
+                                        file_options.overwrite = true;
+                                        options.overwrite = true;
+                                    }
+                                    dir::TransitProcessResult::Skip => {
+                                        file_options.skip_exist = true;
+                                    }
+                                    dir::TransitProcessResult::SkipAll => {
+                                        file_options.skip_exist = true;
+                                        options.skip_exist = true;
+                                    }
+                                    dir::TransitProcessResult::Retry => {}
+                                    dir::TransitProcessResult::ContinueOrAbort => {
+                                        let err_msg = err.to_string();
+                                        err!(err_msg.as_str(), err.kind);
+                                    }
+                                    dir::TransitProcessResult::Abort => {
+                                        let err_msg = err.to_string();
+                                        err!(err_msg.as_str(), err.kind);
+                                    }
                                 }
                             }
+                            ErrorKind::PermissionDenied => {
+                                let mut info_process = info_process.clone();
+                                info_process.state = dir::TransitState::Exists;
+                                let user_decide = progress_handler(info_process);
+                                match user_decide {
+                                    dir::TransitProcessResult::Overwrite => {
+                                        err!(
+                                            "Overwrite denied for this situation!",
+                                            ErrorKind::Other
+                                        );
+                                    }
+                                    dir::TransitProcessResult::OverwriteAll => {
+                                        err!(
+                                            "Overwrite denied for this situation!",
+                                            ErrorKind::Other
+                                        );
+                                    }
+                                    dir::TransitProcessResult::Skip => {
+                                        file_options.skip_exist = true;
+                                    }
+                                    dir::TransitProcessResult::SkipAll => {
+                                        file_options.skip_exist = true;
+                                        options.skip_exist = true;
+                                    }
+                                    dir::TransitProcessResult::Retry => {}
+                                    dir::TransitProcessResult::ContinueOrAbort => {
+                                        let err_msg = err.to_string();
+                                        err!(err_msg.as_str(), err.kind);
+                                    }
+                                    dir::TransitProcessResult::Abort => {
+                                        let err_msg = err.to_string();
+                                        err!(err_msg.as_str(), err.kind);
+                                    }
+                                }
+                            }
+                            _ => {
+                                let err_msg = err.to_string();
+                                err!(err_msg.as_str(), err.kind);
+                            }
                         }
-                        _ => {
-                            let err_msg = err.to_string();
-                            err!(err_msg.as_str(), err.kind)
-                        }
-                    },
                 }
             }
         }
@@ -797,16 +809,13 @@ where
 ///  remove_items(&from_paths).unwrap();
 /// ```
 ///
-pub fn remove_items<P>(from_items: &[P]) -> Result<()>
-where
-    P: AsRef<Path>,
-{
+pub fn remove_items<P>(from_items: &[P]) -> Result<()> where P: AsRef<Path> {
     for item in from_items {
         let item = item.as_ref();
         if item.is_dir() {
             dir::remove(item)?;
         } else {
-            file::remove(item)?
+            file::remove(item)?;
         }
     }
 

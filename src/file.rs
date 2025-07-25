@@ -3,8 +3,6 @@ use std;
 use std::fs::{ remove_file, File };
 use std::io::{ Read, Write };
 use std::path::Path;
-
-#[cfg(feature = "filetime")]
 use crate::time::{ TimeOptions, copy_time };
 
 // Options and flags which can be used to configure how a file will be  copied  or moved.
@@ -16,7 +14,6 @@ pub struct CopyOptions {
     /// Sets buffer size for copy/move work only with receipt information about process work.
     pub buffer_size: usize,
     /// File time options.
-    #[cfg(feature = "filetime")]
     pub time_options: TimeOptions,
 }
 
@@ -36,7 +33,6 @@ impl CopyOptions {
             overwrite: false,
             skip_exist: false,
             buffer_size: 64000, //64kb
-            #[cfg(feature = "filetime")]
             time_options: TimeOptions::new(),
         }
     }
@@ -128,7 +124,6 @@ pub fn copy<P, Q>(from: P, to: Q, options: &CopyOptions) -> Result<u64>
     }
 
     let result = std::fs::copy(from, to.as_ref())?;
-    #[cfg(feature = "filetime")]
     copy_time(from, to, &options.time_options)?;
 
     Ok(result)
@@ -224,7 +219,6 @@ pub fn copy_with_progress<P, Q, F>(
             }
         }
     }
-    #[cfg(feature = "filetime")]
     copy_time(from, to, &options.time_options)?;
     Ok(file_size)
 }

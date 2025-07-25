@@ -12,7 +12,7 @@ repository = "https://github.com/webdesus/fs_extra"
 include = ["**/*.rs", "Cargo.toml", "LICENSE", "README.md", "CHANGELOG.md"]
 
 [dependencies]
-filetime = { version = "0.2", optional = true }
+filetime = { version = "0.2" }
 
 [package.metadata.scripts]
 audit = "cargo audit"
